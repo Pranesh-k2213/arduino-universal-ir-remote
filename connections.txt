@@ -1,0 +1,22 @@
+This file gives guidelines to make connections for the main program
+
+I2C LCD display module 
+-> GND --- groung
+-> VCC --- +5 volt
+-> SDA --- A4
+-> SCL --- A5
+
+2 axis Joystick module
+-> GND --- ground
+-> VCC --- +5 volt
+-> VRx --- A0
+-> VRy --- A1
+-> SW  --- A2
+
+IR reciever
+-> GND --- ground
+-> VCC --- +5 volt
+-> sensor out --- D2
+
+IR diode
+-> D8
