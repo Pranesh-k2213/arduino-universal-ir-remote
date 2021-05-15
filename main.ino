@@ -1,3 +1,14 @@
+// Read connections.txt for guidelines to connect components
+//
+// Chaging the value of debug to 1 in line 23
+// will display values of various variables in LCD module 
+// and in serial display which will be help full to debug
+// 
+// So far this program supports SONY, SAMSUNG, RC6 and NEC protocols
+//
+// This program can store hex code of 20 buttons (5 buttons for each remote)
+//
+
 #include<LiquidCrystal_I2C.h>
 #include <IRremote.h>
 #include<string.h>
