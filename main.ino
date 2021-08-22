@@ -8,7 +8,6 @@
 //
 // This program can store hex code of 20 buttons (5 buttons for each remote)
 //
-
 #include<LiquidCrystal_I2C.h>
 #include <IRremote.h>
 #include<string.h>
@@ -16,16 +15,15 @@
 #define EXCLUDE_EXOTIC_PROTOCOLS
 #define RECEIVER_PIN 2
 #define SENDER_PIN 8
-#define inx A0
-#define iny A1
+#define inx A1
+#define iny A0
 #define jbut A2
 #define dtime 325
 #define debug 0
+#define resetPin 7
+#define buzz 9
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-IRrecv receiver(RECEIVER_PIN);
-decode_results results;
-IRsend irsend(SENDER_PIN);
 int currRem = 0;
 int currPos = 0;
 int screen = 0;
@@ -37,6 +35,7 @@ String names[] = {"TV", "SETUP-B", "DVD", "AC", ""};
 String buttons[] = {" add ", "Power", " ch+ ", " ch- ", " vl+ ", " vl- ", "temp+", "temp-", " fn+ ", " fn- ", "back", ""};
 int notin[11];
 int lnotin = 0;
+unsigned long rtime;
 
 uint8_t leftArrow[8]  = {
   0b00001,
@@ -65,8 +64,7 @@ class Remote {
   public:
   int noKeys = 1;
   int keys[6] = {0, 0, 0, 0, 0, 0};
-  unsigned long keyValue[6];
-  int type[6];
+  IRData kData[6];
   void bAdd(int pos) {
     #if debug == 1
       Serial.println("in add func");
@@ -77,16 +75,27 @@ class Remote {
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("listeing");
-      receiver.start();
+      IrReceiver.start();
+      
       for(;;) {
         delay(1);
-        if (receiver.decode(&results) && results.value != 0XFFFFFFFF)
+        if (IrReceiver.available()){
+            IRData *temp = IrReceiver.read();
+            kData[noKeys].protocol = IrReceiver.decodedIRData.protocol;
+            kData[noKeys].command = IrReceiver.decodedIRData.command;
+            kData[noKeys].address = IrReceiver.decodedIRData.address;
+            kData[noKeys].extra = IrReceiver.decodedIRData.extra;
+            kData[noKeys].numberOfBits = IrReceiver.decodedIRData.numberOfBits;
+            kData[noKeys].flags = IrReceiver.decodedIRData.flags;
+            kData[noKeys].decodedRawData = IrReceiver.decodedIRData.decodedRawData;
+            kData[noKeys].rawDataPtr = IrReceiver.decodedIRData.rawDataPtr;
+            IrReceiver.resume();
             break;
+        }
       }
-      receiver.stop();
+      IrReceiver.printIRResultShort(&Serial);
+      IrReceiver.stop();
       keys[noKeys] = pos;
-      keyValue[noKeys] = results.value;
-      type[noKeys] = results.decode_type;
       noKeys += 1;
       #if debug == 1
       Serial.println(results.value, HEX);
@@ -105,12 +114,13 @@ class Remote {
 
 
 void setup() {
- #if debug == 1
+ #if debug == 0
   Serial.begin(9600);
  #endif
   pinMode(LED_BUILTIN, OUTPUT);
-  receiver.enableIRIn();
-  receiver.stop();
+  IrReceiver.begin(RECEIVER_PIN, false);
+  IrSender.begin(SENDER_PIN, false);
+  IrReceiver.stop();
   lcd.begin();
   lcd.clear();
   lcd.backlight();
@@ -135,6 +145,30 @@ void loop() {
   int x = analogRead(inx);
   int y = analogRead(iny);
   int b = analogRead(jbut);
+  int r = digitalRead(resetPin);
+  if (r == 0) {
+    rtime = millis();
+    
+  } else if (((millis() - rtime) >= 5000) && screen == 0){
+    for(int i = 0; i<6 ; i++)
+      remote[currRem].keys[i] = 0;
+    remote[currRem].noKeys = 1;
+    currPos = 0;
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Remote");
+    lcd.setCursor(0,1);
+    lcd.print("Reset");
+    delay(2000);
+    display1();
+    rtime = millis();
+  } else if ((((millis() - rtime) >= 2300) &&((millis() - rtime) <= 2310)) && screen == 0) {
+    tone(buzz, 1000, 300);
+  } else if ((((millis() - rtime) >= 3300) &&((millis() - rtime) <= 3310)) && screen == 0) {
+    tone(buzz, 1000, 300);
+  }else if ((((millis() - rtime) >= 4300) &&((millis() - rtime) <= 4310)) && screen == 0) {
+    tone(buzz, 3000, 500);
+  }
   if (screen == 0) {
     if(y < 200) {
       currRem = (currRem > 0) ? (currRem-1) : currRem;
@@ -204,7 +238,7 @@ void display1() {
     lcd.print(names[currRem + 1]);
     if (currPos != 0 ) {
       lcd.setCursor(8, 1);
-      lcd.print(remote[currRem].keyValue[currPos], HEX);
+      lcd.print(remote[currRem].kData[currPos].decodedRawData, HEX);
     }
   } else if (screen == 1) {
     lcd.clear();
@@ -214,9 +248,7 @@ void display1() {
     lcd.print(buttons[notin[currPos+1]]);
     lcd.setCursor(6, 0);
     lcd.print("<---");
-    
   }
-  
 }
 
 void updatePos(char a) {
@@ -250,7 +282,7 @@ void action() {
         }
       }
     } else {
-      transmit(remote[currRem].keyValue[currPos], remote[currRem].type[currPos]);
+      IrSender.write(&remote[currRem].kData[currPos], 0);
     }
   } else {
     if (buttons[notin[currPos]] == "back") {
@@ -268,46 +300,5 @@ void action() {
       remote[currRem].bAdd(temp);
       currPos = 1;
     }
-  }
-}
-
-void transmit(unsigned long code, int prot){
-  switch (prot) {
-    case SONY:
-      irsend.sendSony(code, 20);
-      #if debug == 1
-      Serial.println("Sending sony");
-      #endif
-      digitalWrite(LED_BUILTIN, HIGH);
-      delay(dtime);
-      digitalWrite(LED_BUILTIN, LOW);
-      break;
-    case RC6:
-      irsend.sendRC6(code, 20);
-      #if debug == 1
-      Serial.println("Sending RC6");
-      #endif
-      digitalWrite(LED_BUILTIN, HIGH);
-      delay(dtime);
-      digitalWrite(LED_BUILTIN, LOW);
-      break;
-    case NEC:
-      irsend.sendNEC(code, 20);
-      #if debug == 1
-      Serial.println("Sending NEC");
-      #endif
-      digitalWrite(LED_BUILTIN, HIGH);
-      delay(dtime);
-      digitalWrite(LED_BUILTIN, LOW);
-      break;
-    case SAMSUNG:
-      irsend.sendSAMSUNG(code, 20);
-      #if debug == 1
-      Serial.println("Sending SAMSUNG");
-      #endif
-      digitalWrite(LED_BUILTIN, HIGH);
-      delay(dtime);
-      digitalWrite(LED_BUILTIN, LOW);
-      break; 
   }
 }
